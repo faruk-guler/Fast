@@ -1,7 +1,7 @@
 ---
 layout: post
 title: NT AUTHORITY_SYSTEM Nedir?
-date: 2023-16-18 19:07
+date: 2023-07-18 19:07
 author: faruk-guler
 comments: true
 categories: [Hacking - Security]
