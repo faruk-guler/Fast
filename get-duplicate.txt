@@ -1,0 +1,8 @@
+Get-ChildItem -Recurse "D:\" | 
+  Where-Object { -not $_.PSIsContainer } |
+  Get-FileHash -Algorithm MD5 |
+  Group-Object -Property Hash |
+  Where-Object { $_.Count -gt 1 } |
+  ForEach-Object {
+    $_.Group | Select-Object Path, Hash
+  }
