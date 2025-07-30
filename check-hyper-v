@@ -1,0 +1,232 @@
+# Cluster ve Mail Ayarları
+$Clusters = @("Cluster İsimleri Yazılır")
+
+$MailFrom = "hyperv-report@domain.com.tr"
+$MailTo = "epostaadresiniz@domain.com.tr"
+$SMTPServer = "smptp.domain.com.tr"
+$MailSubject = "Hyper-V Cluster Detayli Rapor - $(Get-Date -Format 'yyyy-MM-dd')"
+
+# --- VM Restart Pending Kontrol Fonksiyonu ---
+function Test-VMRestartPending {
+    param(
+        [string]$VMName,
+        [string]$VMHost
+    )
+
+    $session = $null
+    try {
+        $session = New-PSSession -ComputerName $VMName -ErrorAction Stop
+
+        $scriptBlock = {
+            $restartPending = $false
+            try {
+                $cbReboot = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing" -Name RebootPending -ErrorAction SilentlyContinue
+                $updateVolatile = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Updates\UpdateExeVolatile" -ErrorAction SilentlyContinue
+                $pendingRename = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+
+                if ($cbReboot -or $updateVolatile -or $pendingRename) {
+                    $restartPending = $true
+                }
+            } catch {
+                $restartPending = $false
+            }
+            return $restartPending
+        }
+
+        $result = Invoke-Command -Session $session -ScriptBlock $scriptBlock
+        Remove-PSSession -Session $session
+        return $result
+    }
+    catch {
+        if ($session) { Remove-PSSession -Session $session }
+        return $false
+    }
+}
+
+# --- Host Donanım Bilgisi Fonksiyonu ---
+function Get-HostHardwareInfo {
+    param($HostName, $VMCount, $ClusterName)
+
+    $proc = Get-WmiObject Win32_Processor -ComputerName $HostName -ErrorAction SilentlyContinue
+    $mem = Get-WmiObject Win32_ComputerSystem -ComputerName $HostName -ErrorAction SilentlyContinue
+    $os = Get-WmiObject Win32_OperatingSystem -ComputerName $HostName -ErrorAction SilentlyContinue
+    $disks = Get-WmiObject Win32_LogicalDisk -ComputerName $HostName -Filter "DriveType=3 AND DeviceID != 'C:'" -ErrorAction SilentlyContinue
+
+    $socketCount = ($proc | Select-Object -ExpandProperty SocketDesignation | Sort-Object -Unique).Count
+    $coreCount = ($proc | Measure-Object -Property NumberOfCores -Sum).Sum
+    $logicalCount = ($proc | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
+    $hyperthreading = if ($coreCount -and $logicalCount -and $logicalCount -gt $coreCount) { "Enabled" } else { "Disabled" }
+    $totalMem = [math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+    $freeMem = [math]::Round($os.FreePhysicalMemory / 1MB, 2)
+    $usedMem = $totalMem - $freeMem
+
+    $diskDetails = $disks | ForEach-Object {
+        $freePercent = if ($_.Size -ne 0) { [math]::Round(($_.FreeSpace / $_.Size) * 100, 1) } else { 0 }
+        "$($_.VolumeName) ($($_.DeviceID)) - $freePercent% Free"
+    } | Sort-Object
+    $diskDetailsStr = $diskDetails -join "<br>"
+
+    $restartedRecently = $false
+    try {
+        $uptimeEvent = Get-WmiObject Win32_OperatingSystem -ComputerName $HostName -ErrorAction Stop
+        if ($uptimeEvent -and $uptimeEvent.LastBootUpTime) {
+            $lastBoot = $uptimeEvent.ConvertToDateTime($uptimeEvent.LastBootUpTime)
+            if ((Get-Date) - $lastBoot -lt (New-TimeSpan -Days 7)) {
+                $restartedRecently = $true
+            }
+        }
+    } catch {}
+
+    $restartPending = $false
+    try {
+        $cbReboot = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing" -Name RebootPending -ErrorAction SilentlyContinue
+        $updateVolatile = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Updates\UpdateExeVolatile" -ErrorAction SilentlyContinue
+        $pendingRename = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+
+        if ($cbReboot -or $updateVolatile -or $pendingRename) {
+            $restartPending = $true
+        }
+    } catch {}
+
+    [PSCustomObject]@{
+        ClusterName      = $ClusterName
+        HostName         = $HostName
+        PhysicalCPU      = $socketCount
+        CoreCount        = $coreCount
+        LogicalCPU       = $logicalCount
+        Hyperthreading   = $hyperthreading
+        MemTotalGB       = $totalMem
+        MemUsedGB        = $usedMem
+        MemFreeGB        = $freeMem
+        VMCount          = $VMCount
+        OSVersion        = $os.Caption
+        DiskDetails      = $diskDetailsStr
+        RestartedRecent  = $restartedRecently
+        RestartPending   = $restartPending
+    }
+}
+
+# --- VM Bilgisi Fonksiyonu ---
+function Get-VMFullInfo {
+    param($VM, $NodeName)
+    $cpucount = $VM.ProcessorCount
+    $memAssigned = [math]::Round($VM.MemoryAssigned / 1MB, 2)
+    $memStartup = [math]::Round($VM.MemoryStartup / 1MB, 2)
+    $memMin = [math]::Round($VM.MemoryMinimum / 1MB, 2)
+    $memMax = [math]::Round($VM.MemoryMaximum / 1MB, 2)
+    $chkpoints = (Get-VMSnapshot -VMName $VM.Name -ComputerName $NodeName -ErrorAction SilentlyContinue)
+    $chkpointCount = if ($chkpoints) { $chkpoints.Count } else { 0 }
+    $chkpointNames = if ($chkpoints) { $chkpoints | Select-Object -ExpandProperty Name -Unique } else { @() }
+    $vhdDisks = $VM.HardDrives | Select-Object -ExpandProperty Path
+
+    $restartPendingVM = Test-VMRestartPending -VMName $VM.Name -VMHost $NodeName
+
+    [PSCustomObject]@{
+        VMName         = $VM.Name
+        Node           = $NodeName
+        vCPU           = $cpucount
+        MemStartupMB   = $memStartup
+        MemMinMB       = $memMin
+        MemMaxMB       = $memMax
+        MemAssignedMB  = $memAssigned
+        CheckpointCount= $chkpointCount
+        CheckpointNames= ($chkpointNames -join ", ")
+        VHDPaths       = ($vhdDisks -join "; ")
+        RestartPending = $restartPendingVM
+    }
+}
+
+# --- Cluster Toplama ---
+$hostHwList = @()
+$vmFullInfo = @()
+$clusterVMCount = @{}
+$clusterHostCount = @{}
+$clusterRestartedHosts = @{}
+$clusterRestartPendingHosts = @{}
+$clusterCheckpointVMCount = @{}
+$clusterCheckpointVMList = @()
+$clusterRestartPendingVMCount = @{}
+
+foreach ($cluster in $Clusters) {
+    $nodes = Get-ClusterNode -Cluster $cluster -ErrorAction SilentlyContinue
+    $totalClusterVMs = 0
+    $totalClusterHosts = $nodes.Count
+    $restartedHostsCount = 0
+    $checkpointVMsCount = 0
+    $restartPendingHostsCount = 0
+    $restartPendingVMCount = 0
+
+    foreach ($node in $nodes) {
+        $vms = Get-VM -ComputerName $node.Name -ErrorAction SilentlyContinue
+        $VMCount = ($vms | Measure-Object).Count
+        $totalClusterVMs += $VMCount
+        
+        $hostInfo = Get-HostHardwareInfo -HostName $node.Name -VMCount $VMCount -ClusterName $cluster
+        if ($hostInfo.RestartedRecent) { $restartedHostsCount++ }
+        if ($hostInfo.RestartPending) { $restartPendingHostsCount++ }
+        $hostHwList += $hostInfo
+
+        foreach ($vm in $vms) {
+            $chkpoints = (Get-VMSnapshot -VMName $vm.Name -ComputerName $node.Name -ErrorAction SilentlyContinue)
+            if ($chkpoints) {
+                $checkpointVMsCount += 1
+                $clusterCheckpointVMList += [PSCustomObject]@{
+                    Cluster = $cluster
+                    Host = $node.Name
+                    VMName = $vm.Name
+                    CheckpointCount = $chkpoints.Count
+                    CheckpointNames = ($chkpoints | Select-Object -ExpandProperty Name -Unique) -join ", "
+                }
+            }
+            $restartPendingVM = Test-VMRestartPending -VMName $vm.Name -VMHost $node.Name
+            if ($restartPendingVM) { $restartPendingVMCount++ }
+            $vmFullInfo += Get-VMFullInfo -VM $vm -NodeName $node.Name
+        }
+    }
+
+    $clusterVMCount[$cluster] = $totalClusterVMs
+    $clusterHostCount[$cluster] = $totalClusterHosts
+    $clusterRestartedHosts[$cluster] = $restartedHostsCount
+    $clusterCheckpointVMCount[$cluster] = $checkpointVMsCount
+    $clusterRestartPendingHosts[$cluster] = $restartPendingHostsCount
+    $clusterRestartPendingVMCount[$cluster] = $restartPendingVMCount
+}
+
+# --- HTML Raporlama ---
+
+$clusterSummaryTable = @"
+<h3>Cluster Genel Ozeti</h3>
+<table border='1'>
+<tr>
+<th>Cluster Adı</th><th>Host Sayisi</th><th>Toplam VM Sayisi</th><th>Son 7 Gün Restart Olan Host Sayisi</th><th>Restart Pending Host Sayisi</th><th>Checkpoint Olan VM Sayisi</th><th>Restart Pending VM Sayisi</th>
+</tr>
+"@
+foreach ($cluster in $Clusters) {
+    $clusterSummaryTable += "<tr><td>$cluster</td><td>$($clusterHostCount[$cluster])</td><td>$($clusterVMCount[$cluster])</td><td>$($clusterRestartedHosts[$cluster])</td><td>$($clusterRestartPendingHosts[$cluster])</td><td>$($clusterCheckpointVMCount[$cluster])</td><td>$($clusterRestartPendingVMCount[$cluster])</td></tr>"
+}
+$clusterSummaryTable += "</table>"
+
+$checkpointVmTable = ""
+if ($clusterCheckpointVMList.Count -gt 0) {
+    $checkpointVmTable = $clusterCheckpointVMList | Select-Object Cluster, Host, VMName, CheckpointCount, CheckpointNames | ConvertTo-Html -PreContent "<h3>Checkpoint Olan VMler Detaylari</h3>" -Fragment
+} else {
+    $checkpointVmTable = "<h3>Checkpoint Olan VM Yok</h3>"
+}
+
+$hwTable = $hostHwList | Select-Object ClusterName, HostName, PhysicalCPU, CoreCount, LogicalCPU, Hyperthreading, MemTotalGB, MemUsedGB, MemFreeGB, VMCount, OSVersion, @{Name="Disk Detayları";Expression={$_.DiskDetails}} | ConvertTo-Html -Fragment -PreContent "<h3>Host Donanım Bilgileri (VM Sayıları ve Disk Detayları)</h3>"
+
+$vmTable = $vmFullInfo | ConvertTo-Html -Fragment -PreContent "<h3>VM Detaylari</h3>"
+
+$HTMLHeader = @"
+<style>
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px; }
+    th { background-color: #2f4f4f; color: white; }
+    tr:nth-child(even) { background-color: #f2f2f2; }
+</style>
+<h2>Hyper-V Cluster Detayli Rapor - $(Get-Date -Format 'yyyy-MM-dd HH:mm')</h2>
+"@
+
+$body = $HTMLHeader + $clusterSummaryTable + "<br><br>" + $checkpointVmTable + "<br><br>" + $hwTable + "<br><br>" + $vmTable
+
+Send-MailMessage -From $MailFrom -To $MailTo -Subject $MailSubject -Body $body -BodyAsHtml -SmtpServer $SMTPServer
