@@ -3,7 +3,7 @@
 
 
 # Dizin belirleyin
-$imageDirectory = '\\guler.com\NETLOGON\ScreenSaver\Beytepe'
+$imageDirectory = '\\guler.com\NETLOGON\ScreenSaver\IST'
 
 # Dizindeki tüm resim dosyalarını alın
 $imageFiles = Get-ChildItem -Path $imageDirectory -Filter *.*
