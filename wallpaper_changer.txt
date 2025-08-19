@@ -1,6 +1,6 @@
-
-
-
+# name: domain comp multi wallpaper rotation
+# script by: faruk-guler
+# page: farukguler.com
 
 # Dizin belirleyin
 $imageDirectory = '\\guler.com\NETLOGON\ScreenSaver\IST'
@@ -71,3 +71,4 @@ if ($wallpaperFiles.Count -gt 0) {
 
 
 #>
+
