@@ -1,4 +1,4 @@
-﻿# Kullanıcıdan kullanıcı adını iste.
+﻿# Kullanıcıdan kullanıcı adını iste
 $username = Read-Host "Kullanıcı adını giriniz"
 
 # Kullanıcı bilgilerini al
@@ -55,4 +55,5 @@ Write-Host "Sifre Son Değiştirme: $($user.PasswordLastSet)"
 # Bekleme
 Write-Host "`nDevam etmek için bir tuşa basın..." -ForegroundColor Gray
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
 
