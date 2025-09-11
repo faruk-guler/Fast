@@ -1,0 +1,9 @@
+stop-service -Name "CRYPTTECH - Csiem Agent" -Force
+start-service -Name "CRYPTTECH - Csiem Agent" -Force
+
+
+sc.exe delete "CRYPTTECH - Csiem Agent"
+sc.exe delete "CRYPTTECH - Csiem Agent" -Force
+
+
+netstat -b -a -n -o | findstr :141
