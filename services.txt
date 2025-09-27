@@ -6,7 +6,7 @@ start-service -Name "GULERTECH - Agent" -Force
 sc.exe delete "GULERTECH - Agent"
 sc.exe delete "GULERTECH - Agent" -Force
 
-
 #
 netstat -b -a -n -o | findstr :141
+
 
