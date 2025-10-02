@@ -1,0 +1,41 @@
+# Ayarlar
+$smtpServer = "relay.farukguler.com"     # SMTP sunucu adresi
+$smtpFrom = "passexpire@farukguler.com"  # Gönderen e-posta adresi
+$smtpTo = ("cyber_team@farukguler.com", "faruk.guler@farukguler.com", "it_team@farukguler.com")  # Alıcı e-posta adresi
+$subject = "Password Expires Report"
+$body = "a"
+
+# Parola süresi hesaplama
+$expiryDays = 30
+$currentDate = Get-Date
+
+$report = Get-ADGroupMember -Identity "Domain Admins" | ForEach-Object {
+    $user = Get-ADUser -Identity $_.SamAccountName -Properties "PasswordLastSet", "PasswordNeverExpires"
+    if ($user.PasswordNeverExpires -eq $false) {
+        $lastSet = $user.PasswordLastSet
+        $expiryDate = $lastSet.AddDays($expiryDays)
+        [PSCustomObject]@{
+            N = $user.Name
+            #PasswordLastSet = $lastSet
+            P = $expiryDate
+        }
+    }
+} | Format-Table -AutoSize | Out-String
+
+# E-posta gönderme
+$message = New-Object system.net.mail.mailmessage
+$message.from = $smtpFrom
+$message.To.Add($smtpTo)
+$message.Subject = $subject
+$message.Body = "$body`n`n$report"
+$smtp = New-Object Net.Mail.SmtpClient($smtpServer)
+
+# Alıcı adreslerini ekleme
+foreach ($recipient in $smtpTo) {
+    $message.To.Add($recipient)
+}
+
+# E-posta gönderimi
+$smtp.Send($message)
+
+Write-Output "E-posta başarıyla gönderildi."
