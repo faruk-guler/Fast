@@ -1,4 +1,4 @@
-## Check Comp. Acc.
+## Check Comp. Acc. (181) day
 
 $DaysInactive = 181
 $time = (Get-Date).AddDays(-$DaysInactive)
