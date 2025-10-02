@@ -1,0 +1,1 @@
+Get-ChildItem 'H:\dns' -Recurse | Where-Object {($_.LastWriteTime.Date -le (Get-Date).Date.AddDays(-2))} |  Remove-Item
