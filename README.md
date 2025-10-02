@@ -1,3 +1,3 @@
-Post and Scripts for Sys Admins
+Post and Scripts for System Admins
 
 - farukguler.com
