@@ -1,5 +1,5 @@
 <#
-    .SYNOPSIS
+    .SYNOPSIS.
     Get-ADHealth.ps1 - Domain Controller Health Check Script.
 
     .DESCRIPTION
