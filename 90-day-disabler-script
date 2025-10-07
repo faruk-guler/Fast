@@ -1,6 +1,6 @@
 $When = (Get-Date).AddDays(-90).ToFileTimeUtc()
 
-Get-ADUser -Filter * -SearchBase "OU=IT_Pers,DC=guler,DC=com" `
+Get-ADUser -Filter * -SearchBase "OU=IT_Personal,DC=guler,DC=com" `
     -SearchScope Subtree -Properties SamAccountName, LastLogonTimestamp, Enabled |
 Where-Object {
     ($_.LastLogonTimestamp -ne $null) -and
