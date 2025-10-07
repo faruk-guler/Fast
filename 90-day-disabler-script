@@ -11,3 +11,7 @@ Where-Object {
 ForEach-Object {
     Disable-ADAccount -Identity $_.SamAccountName
 }
+
+# ⚠️ UYARI: Bu betik `LastLogonTimestamp` kullanır — 14 güne varan gecikme olabilir!
+# Son 14 gün içinde giriş yapmış kullanıcılar YANLIŞLIKLA devre dışı kalabilir.
+# Kritik ortamlarda "lastLogon" + tüm DC'leri sorgulayan güvenli versiyon tercih edilmelidir.
