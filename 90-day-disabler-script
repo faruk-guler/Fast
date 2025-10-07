@@ -1,7 +1,13 @@
 $When = (Get-Date).AddDays(-90).ToFileTimeUtc()
 
-Get-ADUser -Filter * -SearchBase "OU=IT_Managers,DC=guler,DC=com" `
+Get-ADUser -Filter * -SearchBase "OU=IT_Pers,DC=guler,DC=com" `
     -SearchScope Subtree -Properties SamAccountName, LastLogonTimestamp, Enabled |
-Where-Object { ($_.LastLogonTimestamp -ne $null) -and ($_.LastLogonTimestamp -lt $When) -and ($_.Enabled -eq $true) } |
+Where-Object {
+    ($_.LastLogonTimestamp -ne $null) -and
+    ($_.LastLogonTimestamp -lt $When) -and
+    ($_.Enabled -eq $true) -and
+    ($_.SamAccountName -ne "faruk") # <-- Excluded User
+} |
 ForEach-Object {
     Disable-ADAccount -Identity $_.SamAccountName
+}
