@@ -1,0 +1,42 @@
+# Sayaçi 10'dan baslat
+$counter = 1200
+
+Import-Csv -Path 'C:\Add_new\users.csv' | ForEach-Object {
+
+    # Her satir için parolayi olustur
+    $Password = "Passwd$counter+"
+
+    $NewUserParams = @{
+        DisplayName           = $_.displayname
+        Name                  = $_.name
+        Department            = $_.department
+        Division              = $_.division
+        Description           = $_.description
+        Company               = $_.company
+        GivenName             = $_.givenname
+        Surname               = $_.surname
+        EmployeeID            = $_.employeeID
+        SamAccountName        = $_.SAM
+        UserPrincipalName     = ($_.SAM + "@guler.com")
+        Path                  = 'OU=test,DC=guler,DC=com'
+        Enabled               = $true
+        ChangePasswordAtLogon = $true
+        PasswordNeverExpires  = $false
+        Server                = 'guler.com'
+        # AccountPassword parametresi SecureString olmali
+        AccountPassword       = (ConvertTo-SecureString $Password -AsPlainText -Force)
+    }
+
+    try {
+        New-ADUser @NewUserParams -ErrorAction Stop
+        Write-Host "Olusturuldu: $($_.SAM)  — parola: $Password"
+    }
+    catch {
+        Write-Warning "Kullanici eklenemedi: $($_.SAM) — Hata: $($_.Exception.Message)"
+        # Istersen log dosyasina yaz:
+        Add-Content -Path "C:\Scripts\ad_import_errors.log" -Value "$(Get-Date) - $($_.SAM) - $($_.Exception.Message)"
+    }
+
+    # Sayaçi artir
+    $counter++
+}
