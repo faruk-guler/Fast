@@ -34,7 +34,7 @@ Import-Csv -Path 'C:\Add_new\users.csv' | ForEach-Object {
     catch {
         Write-Warning "Kullanici eklenemedi: $($_.SAM) — Hata: $($_.Exception.Message)"
         # Istersen log dosyasina yaz:
-        # Add-Content -Path "C:\Scripts\ad_import_errors.log" -Value "$(Get-Date) - $($_.SAM) - $($_.Exception.Message)"
+        # Add-Content -Path "C:\Logs\ad_import_errors.log" -Value "$(Get-Date) - $($_.SAM) - $($_.Exception.Message)"
     }
 
     # Sayaçi artir
