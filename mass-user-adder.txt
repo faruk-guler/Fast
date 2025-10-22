@@ -4,7 +4,7 @@ $counter = 1500
 Import-Csv -Path 'C:\Add_new\users.csv' | ForEach-Object {
 
     # Her satir için parolayi olustur
-    $Password = "Passwd$counter+"
+    $Password = "TestParola$counter+"
 
     $NewUserParams = @{
         DisplayName           = $_.displayname
