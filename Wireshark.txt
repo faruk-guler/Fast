@@ -21,5 +21,6 @@ gui.column.format:
 ###########################################
 
 # Qwern 3 Max:
+ip.src == 192.168.1.43 && (tcp.flags == 0x002 || dns.flags.response == 0 || tls.handshake.extensions_server_name || http.request || frame.len > 2000)
 
 
