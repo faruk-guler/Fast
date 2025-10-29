@@ -1,0 +1,16 @@
+Daha iyi analiz için bu kolonları ekleyin:
+**Edit → Preferences → Columns**
+
+gui.column.format:
+	"No.", "%m",
+	"Time", "%t",
+	"Source", "%s",
+	"Destination", "%d",
+	"Protocol", "%p",
+	"Length", "%L",
+	"DNS Name", "%Cus:dns.qry.name:0:R",
+	"TLS SNI", "%Cus:tls.handshake.extensions_server_name:0:R",
+	"HTTP Host", "%Cus:http.host:0:R",
+	"TCP Stream", "%Cus:tcp.stream:0:R",
+	"Dst Port", "%Cus:tcp.dstport:0:R",
+	"Info", "%i"
