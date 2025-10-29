@@ -24,4 +24,14 @@ gui.column.format:
 ip.src == 192.168.1.43 && (tcp.flags == 0x002 || dns.flags.response == 0 || tls.handshake.extensions_server_name || http.request || frame.len > 2000)
 
 # GPT:
+(tcp.flags.syn == 1 && tcp.flags.ack == 0) or
+(dns.flags.response == 0 and dns.qry.name) or
+tls.handshake.extensions_server_name or
+http.request or
+quic or
+(udp and not (udp.port == 53 or udp.port == 123 or udp.port == 443 or udp.port == 5353 or udp.port == 1900)) or
+frame.len > 2000
+
+# Gemini:
+
 
