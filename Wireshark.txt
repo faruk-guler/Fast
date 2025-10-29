@@ -16,5 +16,8 @@ gui.column.format:
 	"Info", "%i"
 
 
-# Wireshark display filters:
+# Wireshark Best Display Filters:
+
+# Qwern 3 Max:
+
 
