@@ -33,5 +33,19 @@ quic or
 frame.len > 2000
 
 # Gemini:
+(ip.addr == 192.168.1.43) && (
+    (tcp.flags.syn == 1 && tcp.flags.ack == 0) ||
+    (dns.flags.response == 0) ||
+    tls.handshake.extensions_server_name ||
+    quic ||
+    http.host ||
+    (http.request.method == "POST") ||
+    (udp && !(udp.port == 53 || udp.port == 123)) ||
+    ssl.handshake ||
+    frame.len > 2000
+)
+
+# Claude:
+
 
 
