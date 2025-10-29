@@ -1,4 +1,4 @@
-Daha iyi analiz için bu kolonları ekleyin:
+# Daha iyi analiz için kolonlar:
 **Edit → Preferences → Columns**
 
 gui.column.format:
@@ -14,3 +14,7 @@ gui.column.format:
 	"TCP Stream", "%Cus:tcp.stream:0:R",
 	"Dst Port", "%Cus:tcp.dstport:0:R",
 	"Info", "%i"
+
+
+# Wireshark display filters:
+
