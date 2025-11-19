@@ -1,0 +1,117 @@
+Add-Type @"
+
+using System;
+
+using System.Net;
+
+using System.Runtime.InteropServices;
+
+public class ArpTools {
+
+[DllImport("iphlpapi.dll", ExactSpelling=true)]
+
+public static extern int SendARP(int destIP, int srcIP, byte[] macAddr, ref int physicalAddrLen);
+
+}
+
+"@
+
+# --- AYARLAR ---
+
+$NetworkRange = "192.168.1."
+
+$StartIP = 1
+
+$EndIP = 254
+
+$SmtpServer = "smtp.gmail.com"
+
+$EmailFrom = "mail adresi"
+
+$EmailTo = "kime gönderilecek"
+
+$EmailSubject = "⚠️ IP Çakışması Tespit Edildi - 192.168.1.0/24"
+
+# --- FONKSİYONLAR ---
+
+function Get-MAC {
+
+param($ip)
+
+try {
+
+$dst = [BitConverter]::ToInt32(([IPAddress]::Parse($ip)).GetAddressBytes(),0)
+
+$mac = New-Object Byte[] 6
+
+$len = 6
+
+[void][ArpTools]::SendARP($dst, 0, $mac, [ref]$len)
+
+if ($len -eq 0) { return $null }
+
+($mac[0..($len-1)] | ForEach-Object { $_.ToString("X2") }) -join "-"
+
+} catch {
+
+return $null
+
+}
+
+}
+
+Write-Host " IP çakışma tespiti başlıyor..."
+
+$results = @{}
+
+for ($i = $StartIP; $i -le $EndIP; $i++) {
+
+$ip = "$NetworkRange$i"
+
+$mac = Get-MAC $ip
+
+if ($mac) {
+
+if ($results.ContainsKey($ip)) {
+
+if ($results[$ip] -ne $mac) {
+
+$results[$ip] += ",$mac"
+
+}
+
+} else {
+
+$results[$ip] = $mac
+
+}
+
+}
+
+}
+
+$conflicts = $results.GetEnumerator() | Where-Object { $_.Value -match "," }
+
+if ($conflicts) {
+
+Write-Host " Çakışma bulundu, e-posta gönderiliyor..."
+
+$body = "Aşağıdaki IP adreslerinde çakışma tespit edildi:`n`n"
+
+foreach ($item in $conflicts) {
+
+$body += "IP: $($item.Key)`nMAC Adresleri: $($item.Value)`n`n"
+
+}
+
+Send-MailMessage -From $EmailFrom -To $EmailTo -Subject $EmailSubject -Body $body -SmtpServer $SmtpServer -Port 25 -Encoding UTF8
+
+Write-Host "E-posta gönderildi!"
+
+}
+
+else {
+
+Write-Host "Çakışma yok."
+
+}
