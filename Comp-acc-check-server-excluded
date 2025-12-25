@@ -1,0 +1,12 @@
+Import-Module activedirectory
+
+# Parametreler
+$domain = "guler.com"
+$DaysInactive = 180
+$time = (Get-Date).Adddays(-($DaysInactive))
+$date = Get-Date ($time) -UFormat %d.%m.%y
+$File = "c:\Inactive_Computers_GULER.com.csv"
+
+# Son 180 günde oturum açılmamış bilgisayarları $file yolundaki dosyaya listele ve serverleri haric tut
+$CompList = Get-ADComputer -Filter {LastLogonTimeStamp -lt $time -and operatingSystem -notlike "*server*"} -SearchBase "DC=guler,DC=com" -Properties Name,LastLogonTimeStamp,OperatingSystem | 
+Select-Object Name, OperatingSystem, @{Name="Last Logon TimeStamp"; Expression={[DateTime]::FromFileTime($_.lastLogonTimestamp)}} | Export-Csv $File -encoding UTF8 -notypeinformation
