@@ -2,9 +2,10 @@
 stop-service -Name "GULERTECH - Agent" -Force
 start-service -Name "GULERTECH - Agent" -Force
 
-# Delte Service:
+# Delete Service:
 sc.exe delete "GULERTECH - Agent"
 sc.exe delete "GULERTECH - Agent" -Force
 
 # Control Ports:
 netstat -b -a -n -o | findstr :141
+
