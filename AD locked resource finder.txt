@@ -1,0 +1,22 @@
+# 1. Tüm Domain Controller'ları bul
+$dcs = Get-ADDomainController -Filter *
+
+# 2. Filtre: Son 90 gün içindeki 4740 olayları
+$filterHash = @{
+    LogName   = "Security"
+    Id        = 4740
+    StartTime = (Get-Date).AddDays(-90)
+}
+
+# 3. Tüm DC'lerden olayları topla
+$allEvents = foreach ($dc in $dcs) {
+    Get-WinEvent -ComputerName $dc.HostName -FilterHashTable $filterHash -ErrorAction SilentlyContinue | 
+        Select-Object @{Name="DC"; Expression={$dc.HostName}},
+                      TimeCreated,
+                      @{Name="Kilitlenen_Kullanici"; Expression={$_.Properties[0].Value}},
+                      @{Name="Kilitleyen_Cihaz"; Expression={$_.Properties[1].Value}},
+                      @{Name="Yazildigi_DC"; Expression={$_.Properties[4].Value}}
+}
+
+# 4. Tek tabloda göster
+$allEvents | Format-Table -AutoSize

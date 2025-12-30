@@ -1,0 +1,59 @@
+# ========================================================
+# RPC Log Query:
+# ========================================================
+
+$ComputerName = "uisst00"
+$HoursBack    = 1
+$MaxEvents    = 30
+
+# Kritik Güvenlik Olayları
+$EventIDs = @(4625, 4648, 4740)
+
+$FilterHash = @{
+    LogName   = "Security"
+    Id        = $EventIDs
+    StartTime = (Get-Date).AddHours(-$HoursBack)
+}
+
+Write-Host "[$ComputerName] Loglar taranıyor (Son $MaxEvents olay)..." -ForegroundColor Cyan
+
+try {
+    $Events = Get-WinEvent -ComputerName $ComputerName -FilterHashTable $FilterHash -MaxEvents $MaxEvents -ErrorAction Stop
+
+    $Results = foreach ($Event in $Events) {
+        $Xml = [xml]$Event.ToXml()
+        
+        # EventData sözlüğü oluştur
+        $EventData = @{}
+        foreach ($Data in $Xml.Event.EventData.Data) {
+            if ($Data.Name) { $EventData[$Data.Name] = $Data.'#text' }
+        }
+
+        [PSCustomObject]@{
+            Zaman             = $Event.TimeCreated
+            OlayID            = $Event.Id
+            BaslatanKullanici = $EventData["SubjectUserName"]
+            HedefKullanici    = $EventData["TargetUserName"]
+            KaynakIP          = $EventData["IpAddress"]
+            KaynakMakine      = $EventData["WorkstationName"]
+            Uygulama          = $EventData["ProcessName"]
+            LogonTipi         = $EventData["LogonType"]
+            Aciklama          = switch ($Event.Id) {
+                4625 { "Başarısız Giriş" }
+                4648 { "Kimlik Denemesi (RunAs)" }
+                4740 { "HESAP KİLİTLENDİ" }
+                Default { "Bilinmeyen" }
+            }
+        }
+    }
+
+    if ($Results) {
+        $Results | Sort-Object Zaman -Descending | Format-Table -AutoSize
+    } else {
+        Write-Host "Kayıt bulunamadı." -ForegroundColor Yellow
+    }
+
+}
+catch {
+    Write-Warning "Hata: $($_.Exception.Message)"
+}
