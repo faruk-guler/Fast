@@ -1,0 +1,11 @@
+# single file
+
+Get-GPOReport -All -Domain "guler.com" -ReportType HTML -Path $home\allgporeports.html
+
+# numbered files
+
+$allgpos = Get-GPO -All | Select-Object -ExpandProperty DisplayName
+ 
+foreach ($g in $allgpos) {
+    Get-GPOReport -Name $g -ReportType HTML -Path $home\$g.html
+}
