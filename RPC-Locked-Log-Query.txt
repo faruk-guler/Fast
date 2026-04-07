@@ -2,7 +2,7 @@
 # RPC Log Sorguları (Gelişmiş & Tam Anlamlandırılmış)
 # ========================================================
 
-$ComputerName = "orion21354"
+$ComputerName = "COMP01-OR24"
 $HoursBack    = 2
 $MaxEvents    = 300
 
