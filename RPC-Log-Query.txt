@@ -1,12 +1,12 @@
 # ========================================================
-# RPC Log Query:
+# RPC Log Sorguları (Gelişmiş & Tam Anlamlandırılmış)
 # ========================================================
 
-$ComputerName = "uisst00"
-$HoursBack    = 1
-$MaxEvents    = 30
+$ComputerName = "orion21354"
+$HoursBack    = 2
+$MaxEvents    = 300
 
-# Kritik Güvenlik Olayları
+# Olay ID'leri: 4625 (Hatalı), 4648 (RunAs), 4740 (Kilitlenme)
 $EventIDs = @(4625, 4648, 4740)
 
 $FilterHash = @{
@@ -15,15 +15,13 @@ $FilterHash = @{
     StartTime = (Get-Date).AddHours(-$HoursBack)
 }
 
-Write-Host "[$ComputerName] Loglar taranıyor (Son $MaxEvents olay)..." -ForegroundColor Cyan
+Write-Host "`n[$ComputerName] Derin Analiz Başlatıldı (Tam Kapsam)..." -ForegroundColor Cyan
 
 try {
     $Events = Get-WinEvent -ComputerName $ComputerName -FilterHashTable $FilterHash -MaxEvents $MaxEvents -ErrorAction Stop
 
     $Results = foreach ($Event in $Events) {
         $Xml = [xml]$Event.ToXml()
-        
-        # EventData sözlüğü oluştur
         $EventData = @{}
         foreach ($Data in $Xml.Event.EventData.Data) {
             if ($Data.Name) { $EventData[$Data.Name] = $Data.'#text' }
@@ -37,11 +35,28 @@ try {
             KaynakIP          = $EventData["IpAddress"]
             KaynakMakine      = $EventData["WorkstationName"]
             Uygulama          = $EventData["ProcessName"]
-            LogonTipi         = $EventData["LogonType"]
-            Aciklama          = switch ($Event.Id) {
-                4625 { "Başarısız Giriş" }
-                4648 { "Kimlik Denemesi (RunAs)" }
-                4740 { "HESAP KİLİTLENDİ" }
+            
+            # --- EKSİKSİZ LOGON TİPİ LİSTESİ ---
+            LogonTipi = switch ($EventData["LogonType"]) {
+                0  { "System (0)" }
+                2  { "Fiziksel Giriş (Interactive)" }
+                3  { "Ağ Paylaşımı/SMB (Network)" }
+                4  { "Zamanlanmış Görev (Batch)" }
+                5  { "Servis Başlatma (Service)" }
+                7  { "Kilit Açma (Unlock)" }
+                8  { "Network (Cleartext - Güvensiz!)" }
+                9  { "NewCredentials (RunAs /netonly)" }
+                10 { "RDP (Uzak Masaüstü)" }
+                11 { "Önbellek (Cached Interactive - Offline)" }
+                12 { "Önbellek (Cached Remote Interactive)" }
+                13 { "Önbellek (Cached Unlock)" }
+                Default { if($EventData["LogonType"]){"Tip: " + $EventData["LogonType"]} else {"N/A"} }
+            }
+
+            Durum = switch ($Event.Id) {
+                4625 { "❌ BAŞARISIZ" }
+                4648 { "🔍 RUNAS DENEMESİ" }
+                4740 { "🔐 HESAP KİLİTLENDİ" }
                 Default { "Bilinmeyen" }
             }
         }
@@ -50,10 +65,10 @@ try {
     if ($Results) {
         $Results | Sort-Object Zaman -Descending | Format-Table -AutoSize
     } else {
-        Write-Host "Kayıt bulunamadı." -ForegroundColor Yellow
+        Write-Host "Kayıt bulunamadı. Son 1 saat temiz görünüyor." -ForegroundColor Green
     }
 
 }
 catch {
-    Write-Warning "Hata: $($_.Exception.Message)"
+    Write-Warning "Hata: Sunucuya erişilemedi. Detay: $($_.Exception.Message)"
 }
