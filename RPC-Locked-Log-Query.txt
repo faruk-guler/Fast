@@ -4,7 +4,7 @@
 
 $ComputerName = "orion21354"
 $HoursBack    = 2
-$MaxEvents    = 300.
+$MaxEvents    = 300
 
 # Olay ID'leri: 4625 (Hatalı), 4648 (RunAs), 4740 (Kilitlenme)
 $EventIDs = @(4625, 4648, 4740)
