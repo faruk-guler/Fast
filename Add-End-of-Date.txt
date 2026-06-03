@@ -1,4 +1,4 @@
-$Date = Get-Date "2026-04-31"
+$Date = Get-Date "2026-04-31".
 $OU   = "OU=TestUsers,DC=guler,DC=com"
 
 Get-ADUser -Filter * -SearchBase $OU | ForEach-Object {
