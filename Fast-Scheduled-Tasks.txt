@@ -1,4 +1,4 @@
-Fast TScheduled Tasks:
+Fast PS Scheduled Tasks:
 
 SYSTEM:
 schtasks /Create /TN "DNS_LOG_SON_2_GUN" /SC DAILY /ST 20:29 /RU "SYSTEM" /RL HIGHEST /F /TR "powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\Scripts\DNS_Log_Silme\dns.ps1"
