@@ -1,0 +1,3 @@
+Get-FileHash .\scanner.exe
+Get-FileHash .\file.exe-Algorithm MD5
+Get-FileHash .\file.exe-Algorithm SHA256
