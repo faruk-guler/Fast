@@ -1,0 +1,238 @@
+# ==============================================================================
+# Find-LockoutSource-OnClient-AllUsers.ps1
+# ==============================================================================
+# NEREDE ÇALIŞTIRILIR: DC'de DEĞİL. Aşama-1 script'inin bulduğu "Caller_Device"
+# üzerinde, o makineye RDP/konsol ile bağlanıp LOKAL olarak çalıştırılır.
+# Yerel çalıştığı için WinRM double-hop, RPC/firewall sorunları devre dışı kalır.
+#
+# BU VERSİYON: Tek kullanıcı yerine bu makinedeki TÜM başarısız logon'ları (4625)
+# tarar, sonra servis/scheduled task/IIS app pool listesini bu kullanıcı adlarıyla
+# otomatik çapraz kontrol edip ŞÜPHELİ olanları işaretler.
+#
+# GÜN SAYISINI DEĞİŞTİRMEK İÇİN: Aşağıdaki $Days değişkenini düzenle (satır ~26)
+# ya da çalıştırırken -Days parametresi ver: .\...ps1 -Days 5
+#
+# KULLANIM (Caller_Device üzerinde, Administrator olarak):
+#   .\Find-LockoutSource-OnClient-AllUsers.ps1                # varsayılan gün sayısıyla, TÜM kullanıcılar
+#   .\Find-LockoutSource-OnClient-AllUsers.ps1 -Days 5         # son 5 gün, TÜM kullanıcılar
+#   .\Find-LockoutSource-OnClient-AllUsers.ps1 -UserName jdoe -Days 3   # tek kullanıcıya daraltmak istersen
+# ==============================================================================
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $false)]
+    [string]$UserName,   # boş bırakılırsa TÜM kullanıcılar taranır
+
+    # <<< GÜN SAYISINI BURADAN DEĞİŞTİR (varsayılan: 3) >>>
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 90)]
+    [int]$Days = 3
+)
+
+Set-StrictMode -Version Latest
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Warning "Bu script Administrator olarak çalıştırılmadı. Event log, servis ve task sorguları eksik/boş dönebilir."
+    Write-Warning "Önerilen: PowerShell'i 'Run as Administrator' ile açıp tekrar çalıştırın."
+    Write-Host ""
+}
+
+$scopeText = if ($UserName) { "'$UserName' için" } else { "TÜM kullanıcılar için" }
+Write-Host "=== $env:COMPUTERNAME üzerinde $scopeText kök neden taraması (son $Days gün) ===" -ForegroundColor Cyan
+Write-Host ""
+
+$SubStatusMap = @{
+    '0xc000006a' = 'Bad Password'
+    '0xc0000234' = 'Account Already Locked Out'
+    '0xc0000072' = 'Account Disabled'
+    '0xc0000071' = 'Password Expired'
+    '0xc0000193' = 'Account Expired'
+    '0xc000006d' = 'Bad Username/Auth Info'
+}
+$LogonTypeMap = @{
+    '2' = 'Interactive'; '3' = 'Network (SMB/mapped drive/service)'; '4' = 'Batch (Scheduled Task)'
+    '5' = 'Service'; '8' = 'NetworkCleartext (IIS/Basic Auth)'; '9' = 'NewCredentials (RunAs/cmdkey)'
+    '10' = 'RemoteInteractive (RDP)'; '11' = 'CachedInteractive'
+}
+
+# Built-in hesaplar - servis/task taramasında gürültü olduğu için hariç tutulur
+$BuiltInAccountPatterns = @(
+    '^NT AUTHORITY\\', '^NT SERVICE\\', '^LocalSystem$', '^LocalService$',
+    '^NetworkService$', '^\.\\', '^$'
+)
+
+function Test-BuiltInAccount {
+    param([string]$Account)
+    if ([string]::IsNullOrWhiteSpace($Account)) { return $true }
+    foreach ($pattern in $BuiltInAccountPatterns) {
+        if ($Account -match $pattern) { return $true }
+    }
+    return $false
+}
+
+function Get-AccountUserPart {
+    param([string]$Account)
+    if ([string]::IsNullOrWhiteSpace($Account)) { return $null }
+    ($Account -split '\\')[-1].Trim()
+}
+
+# ------------------------------------------------------------------------------
+# 1) Lokal Security log'dan Event 4625 - TÜM kullanıcılar (ya da -UserName verildiyse tek kullanıcı)
+# ------------------------------------------------------------------------------
+Write-Host "[1/6] Lokal 4625 (başarısız logon) event'leri taranıyor (son $Days gün)..." -ForegroundColor Yellow
+
+$filter = @{ LogName = 'Security'; Id = 4625; StartTime = (Get-Date).AddDays(-$Days) }
+
+$FailedUserNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+try {
+    $events4625 = Get-WinEvent -FilterHashtable $filter -ErrorAction Stop
+
+    if ($UserName) {
+        $events4625 = $events4625 | Where-Object { $_.Properties[5].Value -ieq $UserName }
+    }
+
+    if ($events4625) {
+        # Kullanıcı bazında özetle (kim, kaç kere, hangi logon type'lar, son zaman)
+        $grouped = $events4625 | Group-Object { $_.Properties[5].Value } | Sort-Object Count -Descending
+
+        $rows = foreach ($g in $grouped) {
+            $tUser = $g.Name
+            if ([string]::IsNullOrWhiteSpace($tUser) -or $tUser -eq '-') { continue }
+            $null = $FailedUserNames.Add($tUser)
+
+            $lastEvent  = $g.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1
+            $lType      = [string]$lastEvent.Properties[10].Value
+            $subCode    = ([string]$lastEvent.Properties[9].Value).ToLower()
+            $lTypeDesc  = if ($LogonTypeMap.ContainsKey($lType)) { $LogonTypeMap[$lType] } else { 'Unknown' }
+            $reasonDesc = if ($SubStatusMap.ContainsKey($subCode)) { $SubStatusMap[$subCode] } else { "Other ($subCode)" }
+
+            [PSCustomObject]@{
+                User            = $tUser
+                FailCount       = $g.Count
+                LastFailTime    = $lastEvent.TimeCreated
+                LastLogonType   = "$lType - $lTypeDesc"
+                LastReason      = $reasonDesc
+                LastProcessName = $lastEvent.Properties[18].Value
+                LastIpAddress   = $lastEvent.Properties[19].Value
+            }
+        }
+        $rows | Sort-Object FailCount -Descending | Format-Table -AutoSize
+    } else {
+        Write-Host "    Belirtilen aralıkta bu makinede 4625 bulunamadı." -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Warning "    4625 taraması başarısız: $($_.Exception.Message)"
+}
+
+if ($FailedUserNames.Count -eq 0) {
+    Write-Host "`n[!] Karşılaştırma yapılacak kullanıcı bulunamadı, servis/task taraması genel listeleme modunda devam edecek." -ForegroundColor DarkYellow
+} else {
+    Write-Host "`n[+] Bu makinede başarısız logon veren kullanıcılar: $($FailedUserNames -join ', ')" -ForegroundColor Cyan
+}
+
+# ------------------------------------------------------------------------------
+# 2) Domain hesabıyla çalışan TÜM Windows servisleri (built-in hariç), şüpheli olanlar işaretlenir
+# ------------------------------------------------------------------------------
+Write-Host "`n[2/6] Servisler taranıyor (domain hesabıyla çalışanlar)..." -ForegroundColor Yellow
+
+$svcAll = Get-CimInstance -ClassName Win32_Service -ErrorAction SilentlyContinue |
+    Where-Object { -not (Test-BuiltInAccount $_.StartName) }
+
+if ($UserName) {
+    $svcAll = $svcAll | Where-Object { (Get-AccountUserPart $_.StartName) -ieq $UserName }
+}
+
+if ($svcAll) {
+    $svcAll |
+        Select-Object DisplayName, Name, StartName, State, StartMode,
+            @{N='Suspicious';E={ if ($FailedUserNames.Contains((Get-AccountUserPart $_.StartName))) { 'YES <<<' } else { '' } }} |
+        Sort-Object Suspicious -Descending |
+        Format-Table -AutoSize
+} else {
+    Write-Host "    Domain hesabıyla çalışan servis bulunamadı." -ForegroundColor DarkGray
+}
+
+# ------------------------------------------------------------------------------
+# 3) Domain hesabıyla kayıtlı TÜM Scheduled Task'lar, şüpheli olanlar işaretlenir
+# ------------------------------------------------------------------------------
+Write-Host "`n[3/6] Scheduled Task'lar taranıyor..." -ForegroundColor Yellow
+
+$taskAll = Get-ScheduledTask -ErrorAction SilentlyContinue |
+    Where-Object { -not (Test-BuiltInAccount $_.Principal.UserId) }
+
+if ($UserName) {
+    $taskAll = $taskAll | Where-Object { (Get-AccountUserPart $_.Principal.UserId) -ieq $UserName }
+}
+
+if ($taskAll) {
+    $taskAll |
+        Select-Object TaskName, TaskPath, State,
+            @{N='RunAs';E={$_.Principal.UserId}},
+            @{N='Suspicious';E={ if ($FailedUserNames.Contains((Get-AccountUserPart $_.Principal.UserId))) { 'YES <<<' } else { '' } }} |
+        Sort-Object Suspicious -Descending |
+        Format-Table -AutoSize
+} else {
+    Write-Host "    Domain hesabıyla kayıtlı task bulunamadı." -ForegroundColor DarkGray
+}
+
+# ------------------------------------------------------------------------------
+# 4) IIS Application Pool kimlikleri (IIS bu makinede kuruluysa), şüpheli olanlar işaretlenir
+# ------------------------------------------------------------------------------
+Write-Host "`n[4/6] IIS App Pool kontrol ediliyor..." -ForegroundColor Yellow
+
+if (Get-Module -ListAvailable -Name WebAdministration) {
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+    $poolAll = Get-ChildItem IIS:\AppPools -ErrorAction SilentlyContinue |
+        Where-Object { -not (Test-BuiltInAccount $_.processModel.userName) }
+
+    if ($UserName) {
+        $poolAll = $poolAll | Where-Object { (Get-AccountUserPart $_.processModel.userName) -ieq $UserName }
+    }
+
+    if ($poolAll) {
+        $poolAll |
+            Select-Object Name,
+                @{N='Identity';E={$_.processModel.userName}},
+                @{N='Suspicious';E={ if ($FailedUserNames.Contains((Get-AccountUserPart $_.processModel.userName))) { 'YES <<<' } else { '' } }} |
+            Sort-Object Suspicious -Descending |
+            Format-Table -AutoSize
+    } else {
+        Write-Host "    Domain hesabıyla çalışan App Pool bulunamadı." -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "    Bu makinede IIS/WebAdministration yok, atlanıyor." -ForegroundColor DarkGray
+}
+
+# ------------------------------------------------------------------------------
+# 5) Mapped Drive / Persistent Network Connection (SADECE mevcut oturum!)
+# ------------------------------------------------------------------------------
+Write-Host "`n[5/6] Mapped drive / persistent bağlantılar (bu oturum)..." -ForegroundColor Yellow
+
+$netUse = cmd /c "net use" 2>$null
+if ($netUse) {
+    Write-Host ($netUse -join "`n")
+} else {
+    Write-Host "    Bu oturumda mapped drive yok." -ForegroundColor DarkGray
+}
+Write-Warning "    NOT: Bu liste SADECE script'i çalıştıran oturumun bağlantılarını gösterir."
+Write-Warning "    Şüpheli kullanıcıların mapped drive'ını görmek için o kullanıcı olarak oturum açıp tekrar kontrol edin."
+
+# ------------------------------------------------------------------------------
+# 6) Credential Manager (SADECE mevcut oturumun kimlik bilgilerini gösterir!)
+# ------------------------------------------------------------------------------
+Write-Host "`n[6/6] Credential Manager (cmdkey /list)..." -ForegroundColor Yellow
+cmdkey /list
+Write-Warning "    NOT: cmdkey /list SADECE çalıştıran oturumun kayıtlı kimlik bilgilerini gösterir."
+Write-Warning "    Şüpheli kullanıcı için: o kullanıcı olarak RDP açıp tekrar çalıştırın, ya da:"
+Write-Warning '    runas /user:DOMAIN\<KULLANICI> "cmdkey /list"'
+
+Write-Host "`n=== Tarama tamamlandı ===" -ForegroundColor Cyan
+if ($FailedUserNames.Count -gt 0) {
+    Write-Host "'Suspicious = YES' olarak işaretlenen satırlar, adım 1'deki başarısız logon veren" -ForegroundColor Green
+    Write-Host "kullanıcılarla eşleşen servis/task/app pool'lardır - önce bunları incele." -ForegroundColor Green
+}
+Write-Host "Hiçbir yerde eşleşme çıkmadıysa şüpheliler: Outlook/VPN client saklı parola," -ForegroundColor DarkGray
+Write-Host "tarayıcı kaydedilmiş kimlik bilgisi, mobil cihaz (ActiveSync/EAS), ya da" -ForegroundColor DarkGray
+Write-Host "başka bir kullanıcının bu makinede saved-credential ile RunAs yapması." -ForegroundColor DarkGray
