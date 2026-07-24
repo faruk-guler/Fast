@@ -1,0 +1,28 @@
+Get-WinEvent -FilterHashtable @{
+    LogName = 'Security'
+    Id      = 4625
+} -ErrorAction SilentlyContinue | ForEach-Object {
+    
+    # Events convert to XML format
+    $xml = [xml]$_.ToXml()
+    $eventData = @{}
+    
+    foreach ($data in $xml.Event.EventData.Data) {
+        $eventData[$data.Name] = $data.'#text'
+    }
+
+    [PSCustomObject]@{
+        TimeCreated          = $_.TimeCreated
+        User                 = $eventData['TargetUserName']
+        Domain               = $eventData['TargetDomainName']
+        Workstation          = $eventData['WorkstationName']
+        SourceIP             = $eventData['IpAddress']
+        SourcePort           = $eventData['IpPort']
+        LogonType            = $eventData['LogonType']
+        ProcessName          = $eventData['ProcessName']
+        LogonProcessName     = $eventData['LogonProcess']
+        AuthenticationPackage= $eventData['AuthenticationPackageName']
+        Status               = $eventData['Status']
+        SubStatus            = $eventData['SubStatus']
+    }
+} | Format-Table -AutoSize
