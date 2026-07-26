@@ -1,1 +1,1 @@
-Get-ChildItem -Path . -Recurse -File | Select-String -Pattern "solana" -SimpleMatch
+Get-ChildItem . -r -file | sls "sudo killall -9 soffice.bin" -SimpleMatch | % {"dosya adı ve yolu: $($_.Path)`nsatır no: $($_.LineNumber)`nicerik: $($_.Line.Trim())`n"}
