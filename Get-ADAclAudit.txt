@@ -1,0 +1,24 @@
+Import-Module ActiveDirectory
+$OU = "OU=Kullanicilar,DC=domain,DC=local"
+
+$Root = Get-ADRootDSE
+$Map = @{}
+Get-ADObject -SearchBase $Root.schemaNamingContext -LDAPFilter "(schemaIDGUID=*)" -Properties lDAPDisplayName,schemaIDGUID | % { $Map[[guid]$_.schemaIDGUID] = $_.lDAPDisplayName }
+Get-ADObject -SearchBase "CN=Extended-Rights,$($Root.configurationNamingContext)" -LDAPFilter "(objectClass=controlAccessRight)" -Properties displayName,rightsGuid | % { $Map[[guid]$_.rightsGuid] = $_.displayName }
+
+$acl = Get-Acl "AD:\$OU"
+
+# ACL Tarama
+$acl.Access | ForEach-Object {
+    $objGuid = $_.ObjectType
+    $objName = if ($objGuid -and $objGuid.Guid -ne "00000000-0000-0000-0000-000000000000") { $Map[[guid]$objGuid] } else { "All" }
+
+    [PSCustomObject]@{
+        Identity  = $_.IdentityReference
+        Access    = $_.AccessControlType
+        Rights    = $_.ActiveDirectoryRights.ToString()
+        Target    = $objName
+        Inherited = $_.IsInherited
+        Owner     = $acl.Owner
+    }
+} | Out-GridView -Title "AD ACL - $OU (Owner: $($acl.Owner))"
