@@ -1,0 +1,8 @@
+$Kullanici = "faruk"
+$DC = [string](Get-ADDomainController -Discover).HostName
+
+Get-ADUser -Identity $Kullanici -Server $DC |
+    Get-ADReplicationAttributeMetadata -Server $DC -IncludeDeletedObjects |
+    Select-Object AttributeName, LastOriginatingChangeTime, Version, LastOriginatingDsa |
+    Sort-Object LastOriginatingChangeTime -Descending |
+    Format-Table -AutoSize
