@@ -1,24 +1,68 @@
 Import-Module ActiveDirectory
-$OU = "OU=Kullanicilar,DC=domain,DC=local"
+
+$OU = "OU=Kullanicilar,DC=guler,DC=com"
+$Depth = 0
 
 $Root = Get-ADRootDSE
 $Map = @{}
-Get-ADObject -SearchBase $Root.schemaNamingContext -LDAPFilter "(schemaIDGUID=*)" -Properties lDAPDisplayName,schemaIDGUID | % { $Map[[guid]$_.schemaIDGUID] = $_.lDAPDisplayName }
-Get-ADObject -SearchBase "CN=Extended-Rights,$($Root.configurationNamingContext)" -LDAPFilter "(objectClass=controlAccessRight)" -Properties displayName,rightsGuid | % { $Map[[guid]$_.rightsGuid] = $_.displayName }
 
-$acl = Get-Acl "AD:\$OU"
+Get-ADObject -SearchBase $Root.schemaNamingContext -LDAPFilter "(schemaIDGUID=*)" -Properties lDAPDisplayName,schemaIDGUID | % {
+    $Map[[guid]$_.schemaIDGUID] = $_.lDAPDisplayName
+}
 
-# ACL Tarama
-$acl.Access | ForEach-Object {
-    $objGuid = $_.ObjectType
-    $objName = if ($objGuid -and $objGuid.Guid -ne "00000000-0000-0000-0000-000000000000") { $Map[[guid]$objGuid] } else { "All" }
+Get-ADObject -SearchBase "CN=Extended-Rights,$($Root.configurationNamingContext)" -LDAPFilter "(objectClass=controlAccessRight)" -Properties displayName,rightsGuid | % {
+    $Map[[guid]$_.rightsGuid] = $_.displayName
+}
 
-    [PSCustomObject]@{
-        Identity  = $_.IdentityReference
-        Access    = $_.AccessControlType
-        Rights    = $_.ActiveDirectoryRights.ToString()
-        Target    = $objName
-        Inherited = $_.IsInherited
-        Owner     = $acl.Owner
+$OUs = @(Get-ADOrganizationalUnit -Identity $OU)
+
+if ($Depth -ne 0) {
+    $RootDepth = ($OU -split ',').Count
+
+    Get-ADOrganizationalUnit -SearchBase $OU -SearchScope Subtree -Filter * | % {
+        $Level = ($_.DistinguishedName -split ',').Count - $RootDepth
+        if ($Depth -eq -1 -or $Level -le $Depth) {
+            $OUs += $_
+        }
     }
-} | Out-GridView -Title "AD ACL - $OU (Owner: $($acl.Owner))"
+}
+
+$aclReport = foreach ($CurrentOU in $OUs) {
+
+    $acl = Get-Acl "AD:\$($CurrentOU.DistinguishedName)"
+
+    $Level = ($CurrentOU.DistinguishedName -split ',').Count - ($OU -split ',').Count
+    $OUTree = ("    " * $Level) + "└── " + $CurrentOU.Name
+
+    $acl.Access | % {
+
+        $objGuid = $_.ObjectType
+        $objName = if ($objGuid -and $objGuid.Guid -ne "00000000-0000-0000-0000-000000000000") {
+            $Map[[guid]$objGuid]
+        } else {
+            "All"
+        }
+
+        $inhGuid = $_.InheritedObjectType
+        $inhName = if ($inhGuid -and $inhGuid.Guid -ne "00000000-0000-0000-0000-000000000000") {
+            $Map[[guid]$inhGuid]
+        } else {
+            "All"
+        }
+
+        [PSCustomObject]@{
+            "OU Tree"    = $OUTree
+            OU           = $CurrentOU.DistinguishedName
+            Identity     = $_.IdentityReference
+            Rights       = $_.ActiveDirectoryRights.ToString()
+            Access       = $_.AccessControlType
+            Target       = $objName
+            AppliesTo    = $inhName
+            Inheritance  = $_.InheritanceType
+            Inherited    = $_.IsInherited
+            Owner        = $acl.Owner
+        }
+    }
+}
+
+$aclReport | Out-GridView -Title "AD ACL / Delegation - $OU - Depth $Depth"
