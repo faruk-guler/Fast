@@ -1,0 +1,70 @@
+# Name: ADUser Logon Name Updater
+# Author: github/faruk-guler
+
+Import-Module ActiveDirectory
+$ErrorActionPreference = "Stop"
+$PSDefaultParameterValues['*-AD*:Server'] = 'dc01' # tek bir DC doğrulugu destekler.
+
+$Csv           = "C:\Users\admuser99\Desktop\hatali-12.csv"
+$DefaultSuffix = "guler.com"   # sadece kullanicinin UPN'i bossa kullanilir.
+
+$Stamp = Get-Date -Format yyyyMMdd_HHmmss
+$Plan_ = "C:\temp\plan_$Stamp.csv"
+$Log_  = "C:\temp\rename_$Stamp.log"
+function Log($m, $c = 'Gray') { "$(Get-Date -f s) $m" | Tee-Object -Append $Log_ | Write-Host -ForegroundColor $c }
+function FreeSam($n) { $null -eq (Get-ADUser -Filter { SamAccountName -eq $n }) }
+function FreeUpn($n) { $null -eq (Get-ADUser -Filter { UserPrincipalName -eq $n }) }
+
+# CSV
+$Rows = @(Import-Csv $Csv -Encoding UTF8)
+if (-not $Rows -or -not ($Rows[0].PSObject.Properties.Name -contains 'Sam' -and $Rows[0].PSObject.Properties.Name -contains 'NewSam')) {
+    throw "CSV bos veya basliklar 'Sam','NewSam' degil."
+}
+foreach ($col in 'Sam','NewSam') {
+    if ($Rows | Group-Object { $_.$col.Trim().ToLower() } | Where-Object Count -gt 1) { throw "CSV'de tekrar eden $col var." }
+}
+
+# Plan
+$Plan = foreach ($r in $Rows) {
+    $new = $r.NewSam.Trim()
+    if (-not $r.Sam.Trim() -or -not $new)          { throw "Bos kullanici adi var." }
+    if ($new.Length -gt 20)                         { throw "NewSam 20 karakteri asiyor: $new" }
+    if ($new -match '["/\\\[\]:;|=,+*?<>\s@]')      { throw "NewSam gecersiz karakter iceriyor: $new" }
+    $u = Get-ADUser -Identity $r.Sam.Trim() -Properties UserPrincipalName
+    do { $tmp = "tmp_" + [guid]::NewGuid().ToString('N').Substring(0,10) } until ((FreeSam $tmp) -and (FreeUpn "$tmp@x"))
+    $sfx = if ($u.UserPrincipalName -match '@(.+)$') { $Matches[1] } else { $DefaultSuffix }
+    [PSCustomObject]@{
+        OldSam = $u.SamAccountName; NewSam = $new; Temp = $tmp; Guid = $u.ObjectGUID
+        OldUpn = $u.UserPrincipalName; TmpUpn = "$tmp@$sfx"; NewUpn = "$new@$sfx"
+    }
+}
+
+# Hedef Sam / UPN baska hesapta kullaniliyor mu?
+$srcSam = $Plan.OldSam | ForEach-Object { $_.ToLower() }
+$srcUpn = $Plan.OldUpn | ForEach-Object { "$_".ToLower() }
+foreach ($p in $Plan) {
+    if ($p.NewSam.ToLower() -notin $srcSam -and -not (FreeSam $p.NewSam)) { throw "Hedef Sam baska hesapta: $($p.NewSam)" }
+    if ($p.NewUpn.ToLower() -notin $srcUpn -and -not (FreeUpn $p.NewUpn)) { throw "Hedef UPN baska hesapta: $($p.NewUpn)" }
+}
+
+$Plan | Export-Csv $Plan_ -NoTypeInformation -Encoding UTF8
+$Plan | Format-Table OldSam, NewSam, OldUpn, NewUpn -AutoSize
+if ((Read-Host "Uygulansin mi? (E/H)") -ne 'E') { return }
+
+# Uygula: 1 = gecici ad, 2 = hedef ad (Sam + UPN birlikte)
+foreach ($stage in 1,2) {
+    foreach ($p in $Plan) {
+        $s = if ($stage -eq 1) { $p.Temp }   else { $p.NewSam }
+        $n = if ($stage -eq 1) { $p.TmpUpn } else { $p.NewUpn }
+        try   { Set-ADUser -Identity $p.Guid -SamAccountName $s -UserPrincipalName $n; Log "[$stage/2] $($p.OldSam) -> $s | $n" Green }
+        catch { Log "[$stage/2 HATA] $($p.OldSam) -> $s | $n : $_" Red; Log "DURULDU. Plan: $Plan_" Yellow; throw }
+    }
+}
+
+# Dogrulama
+$bad = $Plan | Where-Object {
+    $u = Get-ADUser -Identity $_.Guid -Properties UserPrincipalName
+    $u.SamAccountName -ne $_.NewSam -or $u.UserPrincipalName -ne $_.NewUpn
+}
+if ($bad) { throw "Dogrulama basarisiz: $($bad.OldSam -join ', ')" }
+Log "Tamam, tum hesaplar dogrulandi." Cyan
