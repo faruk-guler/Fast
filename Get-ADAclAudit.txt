@@ -66,3 +66,4 @@ $aclReport = foreach ($CurrentOU in $OUs) {
 }
 
 $aclReport | Out-GridView -Title "AD ACL / Delegation - $OU - Depth $Depth"
+# $aclReport | Export-Csv -Path "C:\Temp\AD_ACL_Report.csv" -NoTypeInformation -Encoding utf8
