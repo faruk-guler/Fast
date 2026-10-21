@@ -1,69 +1,117 @@
 Import-Module ActiveDirectory
 
-$OU = "OU=Kullanicilar,DC=guler,DC=com"
-$Depth = 0
+$OU     = (Get-ADDomain).DistinguishedName        # domain
+# $OU   = "OU=Kullanicilar,DC=guler,DC=com"       # OU
 
-$Root = Get-ADRootDSE
-$Map = @{}
+$Depth     = 1                                    # -1 unlimited, 0 sadece kök
+$OutDir    = "C:\Temp"
+$Delimiter = ';'
+
+$DomainDN = (Get-ADDomain).DistinguishedName
+$Root     = Get-ADRootDSE
+$Map      = @{}
 
 Get-ADObject -SearchBase $Root.schemaNamingContext -LDAPFilter "(schemaIDGUID=*)" -Properties lDAPDisplayName,schemaIDGUID | % {
     $Map[[guid]$_.schemaIDGUID] = $_.lDAPDisplayName
 }
-
 Get-ADObject -SearchBase "CN=Extended-Rights,$($Root.configurationNamingContext)" -LDAPFilter "(objectClass=controlAccessRight)" -Properties displayName,rightsGuid | % {
     $Map[[guid]$_.rightsGuid] = $_.displayName
 }
 
-$OUs = @(Get-ADOrganizationalUnit -Identity $OU)
+function Resolve-Guid($g) {
+    if (-not $g -or $g -eq [guid]::Empty) { return "All" }
+    if ($Map.ContainsKey($g)) { return $Map[$g] }
+    return $g.ToString()
+}
+
+# DN seviyesi (kaçışlı virgülleri sayma)
+function Get-DnCount($dn) { return ($dn -split '(?<!\\),').Count }
+
+function Save-Csv($Data, $Path) {
+    $csv = $Data | ConvertTo-Csv -NoTypeInformation -Delimiter $Delimiter
+    [System.IO.File]::WriteAllLines($Path, $csv, (New-Object System.Text.UTF8Encoding($true)))
+}
+
+# Kök nesne (domain kökü de olabilir, OU da)
+$OUs = @(Get-ADObject -Identity $OU -Properties distinguishedName,name)
 
 if ($Depth -ne 0) {
-    $RootDepth = ($OU -split ',').Count
+    $RootDepth = Get-DnCount $OU
 
-    Get-ADOrganizationalUnit -SearchBase $OU -SearchScope Subtree -Filter * | % {
-        $Level = ($_.DistinguishedName -split ',').Count - $RootDepth
-        if ($Depth -eq -1 -or $Level -le $Depth) {
-            $OUs += $_
+    Get-ADOrganizationalUnit -SearchBase $OU -SearchScope Subtree -Filter * -Properties distinguishedName,name |
+    Where-Object { $_.DistinguishedName -ne $OU } | % {
+        $Level = (Get-DnCount $_.DistinguishedName) - $RootDepth
+        if ($Depth -eq -1 -or $Level -le $Depth) { $OUs += $_ }
+    }
+
+    # Domain taranıyorsa varsayılan containerlar da eklenir
+    if ($OU -eq $DomainDN) {
+        foreach ($cn in "CN=Users,$DomainDN", "CN=Computers,$DomainDN") {
+            $c = Get-ADObject -Identity $cn -Properties distinguishedName,name -ErrorAction SilentlyContinue
+            if ($c) { $OUs += $c } else { Write-Warning "Container bulunamadı: $cn" }
         }
     }
 }
+
+# DÜZELTME 2: ağaç sırasına diz (üst nesne, altındakilerden önce gelir)
+$OUs = $OUs | Sort-Object {
+    $p = $_.DistinguishedName -split '(?<!\\),'
+    [array]::Reverse($p)
+    $p -join ','
+}
+
+# ACL'leri oku
+$hatalar = New-Object System.Collections.ArrayList
+$RootCnt = Get-DnCount $OU
 
 $aclReport = foreach ($CurrentOU in $OUs) {
 
-    $acl = Get-Acl "AD:\$($CurrentOU.DistinguishedName)"
+    try {
+        $acl = Get-Acl -Path "AD:\$($CurrentOU.DistinguishedName)" -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "ACL okunamadı: $($CurrentOU.DistinguishedName) -> $($_.Exception.Message)"
+        [void]$hatalar.Add([PSCustomObject]@{ OU = $CurrentOU.DistinguishedName; Hata = $_.Exception.Message })
+        continue
+    }
 
-    $Level = ($CurrentOU.DistinguishedName -split ',').Count - ($OU -split ',').Count
+    $Level  = (Get-DnCount $CurrentOU.DistinguishedName) - $RootCnt
     $OUTree = ("    " * $Level) + "└── " + $CurrentOU.Name
 
     $acl.Access | % {
-
-        $objGuid = $_.ObjectType
-        $objName = if ($objGuid -and $objGuid.Guid -ne "00000000-0000-0000-0000-000000000000") {
-            $Map[[guid]$objGuid]
-        } else {
-            "All"
-        }
-
-        $inhGuid = $_.InheritedObjectType
-        $inhName = if ($inhGuid -and $inhGuid.Guid -ne "00000000-0000-0000-0000-000000000000") {
-            $Map[[guid]$inhGuid]
-        } else {
-            "All"
-        }
-
         [PSCustomObject]@{
-            "OU Tree"    = $OUTree
-            OU           = $CurrentOU.DistinguishedName
-            Identity     = $_.IdentityReference
-            Rights       = $_.ActiveDirectoryRights.ToString()
-            Access       = $_.AccessControlType
-            Target       = $objName
-            AppliesTo    = $inhName
-            Inheritance  = $_.InheritanceType
-            Inherited    = $_.IsInherited
-            Owner        = $acl.Owner
+            "OU Tree"     = $OUTree
+            OU            = $CurrentOU.DistinguishedName
+            Identity      = $_.IdentityReference.ToString()
+            Rights        = $_.ActiveDirectoryRights.ToString()
+            Access        = $_.AccessControlType.ToString()
+            Target        = Resolve-Guid $_.ObjectType
+            AppliesTo     = Resolve-Guid $_.InheritedObjectType
+            Inheritance   = $_.InheritanceType.ToString()
+            Inherited     = $_.IsInherited
+            KalitimKapali = $acl.AreAccessRulesProtected   # True = üst OU'dan miras kesilmiş
+            Owner         = $acl.Owner
         }
     }
 }
 
-$aclReport | Out-GridView -Title "AD ACL / Delegation - $OU - Depth $Depth"
-# $aclReport | Export-Csv -Path "C:\Temp\AD_ACL_Report.csv" -NoTypeInformation -Encoding utf8
+# Çıktılar
+New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+$stamp = Get-Date -Format "yyyyMMdd_HHmm"
+
+if (@($aclReport).Count -gt 0) {
+    $csvPath = Join-Path $OutDir "AD_ACL_Report_$stamp.csv"
+    Save-Csv $aclReport $csvPath
+
+    Write-Host "Rapor yazıldı : $csvPath  ($(@($aclReport).Count) ACE, $(@($OUs).Count - $hatalar.Count) nesne)"
+    $aclReport | Out-GridView -Title "AD ACL / Delegation - $OU - Depth $Depth"
+}
+else {
+    Write-Warning "Rapor boş, dosya yazılmadı."
+}
+
+if ($hatalar.Count -gt 0) {
+    $errPath = Join-Path $OutDir "AD_ACL_Errors_$stamp.csv"
+    Save-Csv $hatalar $errPath
+    Write-Warning "$($hatalar.Count) nesne okunamadı, ayrıntı: $errPath"
+}
