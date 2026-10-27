@@ -1,0 +1,15 @@
+$cred    = Get-Credential
+$servers = (Import-Csv "C:\servers.csv").ServerName | Where-Object { $_ -and $_.Trim() }
+
+Invoke-Command -ComputerName $servers -Credential $cred -ErrorAction SilentlyContinue -ScriptBlock {
+    # === KOMUTUNUZ (çıktıyı $s'e atayın) ===
+    $s = ipconfig
+    # =======================================
+    [PSCustomObject]@{
+        ServerName    = $env:COMPUTERNAME
+        CommandResult = (@($s | Out-String -Stream | Where-Object { $_.Trim() }) -join ' | ')
+    }
+} | Select-Object ServerName, CommandResult |
+    Export-Csv "C:\server_sonuclar.csv" -NoTypeInformation -Encoding UTF8
+
+Write-Host "İşlem tamamlandı!" -ForegroundColor Green
