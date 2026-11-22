@@ -20,12 +20,14 @@ Wi-Fi ve kablolu için ayrı ayrı yap.
    - Tercih edilen DNS: `1.1.1.1`
    - DNS over HTTPS: `Açık (şifresiz geri dönüş yok)`
    - Alternatif DNS: `1.0.0.1`
-   - Alternatif DNS over HTTPS: `Açık (şifresiz geri dönüş yok)` # Windows 10 desteklenmez
+   - Alternatif DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)
+)` # Windows 10 desteklenmez
 4. **IPv6**'yı aç:
    - Tercih edilen DNS: `2606:4700:4700::1111`
    - DNS over HTTPS: `Açık (şifresiz geri dönüş yok)`
    - Alternatif DNS: `2606:4700:4700::1001`
-   - Alternatif DNS over HTTPS: `Açık (şifresiz geri dönüş yok)` # Windows 10 desteklenmez
+   - Alternatif DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)
+)` # Windows 10 desteklenmez
 5. **Kaydet**
 
 ### Windows 10: Tarayıcıdan DoH
@@ -42,6 +44,7 @@ Bu yalnızca tarayıcı trafiğini korur. Diğer uygulamalar düz DNS kullanmaya
 ```powershell
 Get-DnsClientDohServerAddress
 ```
+**Windows 10 DoH desteği yok**
 
 Dört Cloudflare adresi `https://cloudflare-dns.com/dns-query` şablonuyla listelenmeli. Windows 10 21H2'de bu komut "tanınmıyor" hatası verir, bu da desteğin olmadığını gösterir.
 
