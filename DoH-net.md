@@ -44,7 +44,11 @@ Bu yalnızca tarayıcı trafiğini korur. Diğer uygulamalar düz DNS kullanmaya
 ```powershell
 Get-DnsClientDohServerAddress
 ```
-**Windows 10 DoH desteği yok**
+
+**Windows 10 (PowerShell):**
+```powershell
+DoH desteği yok sadece adaptörler ipv4 ve v6 dns adresi değiştirilebilir.
+```
 
 Dört Cloudflare adresi `https://cloudflare-dns.com/dns-query` şablonuyla listelenmeli. Windows 10 21H2'de bu komut "tanınmıyor" hatası verir, bu da desteğin olmadığını gösterir.
 
