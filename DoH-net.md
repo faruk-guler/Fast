@@ -1,4 +1,4 @@
-## DOH (DNS over HTTPS) nedir? DNS sorgularını HTTPS üzerinden şifreleyerek gönderen teknolojidir.
+## DOH (DNS over HTTPS) DNS sorgularını HTTPS üzerinden şifreleyerek gönderen teknolojidir.
 
 ### Hangi sistemde DoH destekliyor?
 
