@@ -18,13 +18,13 @@ Wi-Fi ve kablolu için ayrı ayrı yap.
 2. **DNS sunucu ataması** yanındaki **Düzenle** → **Manuel**
 3. **IPv4**'ü aç:
    - Tercih edilen DNS: `1.1.1.1`
-   - DNS over HTTPS: `Açık (şifresiz geri dönüş yok)`
+   - DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)`
    - Alternatif DNS: `1.0.0.1`
    - Alternatif DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)
 )` # Windows 10 desteklenmez
 4. **IPv6**'yı aç:
    - Tercih edilen DNS: `2606:4700:4700::1111`
-   - DNS over HTTPS: `Açık (şifresiz geri dönüş yok)`
+   - DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)`
    - Alternatif DNS: `2606:4700:4700::1001`
    - Alternatif DNS over HTTPS: `Açık (Yalnızca şifrelenmiş (HTTPS üzerinden DNS)
 )` # Windows 10 desteklenmez
