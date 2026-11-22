@@ -1,0 +1,2 @@
+(Invoke-RestMethod https://api.ipify.org)
+(Invoke-RestMethod https://api6.ipify.org)
