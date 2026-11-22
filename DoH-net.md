@@ -12,6 +12,8 @@ Windows 10'da DoH yalnızca Insider build 19628 ve üstünde vardı, normal sür
 
 ### Windows 10/11: Nereye ne yazılır?
 
+#### ⓘ Adaptörleri bul:
+
 Wi-Fi ve kablolu için ayrı ayrı yap.
 
 1. **Ayarlar** → **Ağ ve İnternet** → **Wi-Fi** (kablolu için **Ethernet**) → bağlı olduğun ağın **Özellikler**'i
